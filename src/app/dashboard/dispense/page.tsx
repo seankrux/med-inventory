@@ -1,212 +1,267 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
+import { PackageOpen, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
+import { useProfile } from '@/lib/useProfile'
+import {
+  PageHeader,
+  FieldShell,
+  SelectInput,
+  TextInput,
+  PrimaryButton,
+  Spinner,
+  StatusPill,
+  EmptyState,
+} from '@/components/ui'
+import { Receipt, type ReceiptData } from '@/components/Receipt'
+import { getStockStatus } from '@/lib/utils'
 
 interface Item {
-  id: number; name: string; remaining_inventory: number
+  id: number
+  name: string
+  remaining_inventory: number
+  reorder_level: number
 }
 
+interface RpcSuccess {
+  success: true
+  receipt: ReceiptData & { date: string }
+}
+interface RpcFailure {
+  success: false
+  error: string
+}
+type RpcResult = RpcSuccess | RpcFailure
+
 export default function DispensePage() {
+  const supabase = createClient()
+  const { profile, loading: profileLoading } = useProfile()
+
   const [items, setItems] = useState<Item[]>([])
+  const [itemsLoading, setItemsLoading] = useState(true)
+  const [query, setQuery] = useState('')
   const [itemId, setItemId] = useState('')
   const [qty, setQty] = useState(1)
   const [patientRef, setPatientRef] = useState('')
   const [day, setDay] = useState(new Date().getDate())
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
-  const supabaseRef = useState(() => createClient())[0]
-  const supabase = supabaseRef
-
-  const days = Array.from({ length: 31 }, (_, i) => i + 1)
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => setProfile(data))
-    })
-    supabase.from('items').select('id, name, remaining_inventory').order('name').then(({ data }) => {
-      if (data) setItems(data)
-      setLoading(false)
-    })
-  }, [])
+    supabase
+      .from('items')
+      .select('id, name, remaining_inventory, reorder_level')
+      .order('name')
+      .then(({ data, error }) => {
+        if (error) {
+          toast.error('Failed to load items', { description: error.message })
+        }
+        if (data) setItems(data as Item[])
+        setItemsLoading(false)
+      })
+  }, [supabase])
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return items
+    return items.filter(i => i.name.toLowerCase().includes(q))
+  }, [items, query])
+
+  const selected = items.find(i => String(i.id) === itemId)
+  const overStock = !!selected && qty > selected.remaining_inventory
+  const disabled =
+    saving || itemsLoading || profileLoading || !itemId || qty < 1 || overStock
 
   async function handleDispense() {
-    if (!itemId || !qty || qty <= 0) return
-    const selectedItem = items.find(i => i.id === Number(itemId))
-    if (!selectedItem) return
-    if (qty > selectedItem.remaining_inventory) {
-      alert(`Not enough stock! Only ${selectedItem.remaining_inventory} available.`)
-      return
-    }
-
+    if (!selected || !profile) return
     setSaving(true)
     const { data, error } = await supabase.rpc('dispense_item', {
-      p_item_id: Number(itemId),
+      p_item_id: selected.id,
       p_quantity: qty,
       p_day: day,
       p_patient_ref: patientRef.trim(),
-      p_dispensed_by: profile?.id,
+      p_dispensed_by: profile.id,
     })
 
     if (error) {
-      // Fallback: do it manually
-      const { data: disp, error: dispErr } = await supabase.from('dispenses').insert({
-        item_id: Number(itemId),
-        quantity: qty,
-        day,
-        patient_ref: patientRef.trim(),
-        dispensed_by: profile?.id,
-      }).select().single()
-
-      if (dispErr) { alert('Error: ' + dispErr.message); setSaving(false); return }
-
-      // Update item total_dispensed
-      await supabase.from('items').update({
-        total_dispensed: selectedItem.remaining_inventory >= qty
-          ? (selectedItem.remaining_inventory - qty) // this isn't right without reading current
-          : undefined
-      }).eq('id', Number(itemId))
-
-      // Actually let's use a stored proc approach via SQL function
-      // For now, update directly
-      const { data: curr } = await supabase.from('items').select('total_dispensed').eq('id', Number(itemId)).single()
-      if (curr) {
-        await supabase.from('items').update({
-          total_dispensed: (curr as any).total_dispensed + qty
-        }).eq('id', Number(itemId))
-      }
-
-      setResult({
-        id: disp?.id || '—',
-        medicine: selectedItem.name,
-        quantityDispensed: qty,
-        patientRef: patientRef.trim() || 'N/A',
-        remainingInventory: Math.max(0, selectedItem.remaining_inventory - qty),
-        date: new Date().toISOString(),
-      })
-    } else {
-      setResult(data)
+      toast.error('Could not dispense', { description: error.message })
+      setSaving(false)
+      return
     }
 
+    const result = data as RpcResult | null
+    if (!result || result.success !== true) {
+      toast.error('Could not dispense', {
+        description: result?.error ?? 'The dispense function returned an unexpected result.',
+      })
+      setSaving(false)
+      return
+    }
+
+    setItems(prev =>
+      prev.map(i =>
+        i.id === selected.id
+          ? { ...i, remaining_inventory: result.receipt.remainingInventory }
+          : i,
+      ),
+    )
+    setReceipt(result.receipt)
     setSaving(false)
+    toast.success(`Dispensed ×${qty} of ${selected.name}`)
   }
 
-  function printReceipt() {
-    if (!result) return
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.write(`<html><head><style>
-      body{font-family:'Courier New',monospace;padding:20px;max-width:320px;margin:0 auto}
-      h2{text-align:center;font-size:18px;margin-bottom:4px}
-      .meta{text-align:center;font-size:11px;color:#666;margin-bottom:12px}
-      hr{border-top:1px dashed #999}
-      table{width:100%;font-size:13px;border-collapse:collapse}
-      td{padding:4px 0} td:last-child{text-align:right}
-      .footer{text-align:center;font-size:10px;color:#999;margin-top:8px}
-    </style></head><body>
-      <h2>SAMPLE RECEIPT</h2>
-      <p class="meta">Receipt #${result.id}<br>${new Date(result.date).toLocaleString()}</p><hr>
-      <table>
-        <tr><td><strong>Medicine:</strong></td><td>${result.medicine}</td></tr>
-        <tr><td><strong>Qty Dispensed:</strong></td><td>${result.quantityDispensed}</td></tr>
-        <tr><td><strong>Patient/Ref:</strong></td><td>${result.patientRef}</td></tr>
-        <tr><td><strong>Remaining:</strong></td><td>${result.remainingInventory}</td></tr>
-      </table><hr>
-      <p class="footer">Thank you</p>
-      <script>window.onload=function(){window.print();window.close()}<\\/script>
-    </body></html>`)
-    w.document.close()
+  function reset() {
+    setReceipt(null)
+    setQty(1)
+    setPatientRef('')
+    setItemId('')
+    setQuery('')
+  }
+
+  if (receipt) {
+    return (
+      <div className="mx-auto max-w-md space-y-6">
+        <PageHeader
+          title="Dispensed"
+          description="Transaction recorded. You can print the receipt for the patient."
+        />
+        <Receipt data={receipt} onClose={reset} />
+      </div>
+    )
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dispense Medicine</h1>
-        <p className="text-sm text-gray-500">Issue medicine to patient and print receipt</p>
-      </div>
+    <div className="mx-auto max-w-lg space-y-6">
+      <PageHeader
+        title="Dispense medicine"
+        description="Issue a unit to a patient and decrement stock atomically."
+      />
 
-      {!result ? (
-        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Medicine *</label>
-            {loading ? (
-              <div className="mt-1 h-10 animate-pulse rounded-lg bg-gray-100" />
-            ) : (
-              <select value={itemId} onChange={e => setItemId(e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none">
-                <option value="">Select medicine...</option>
-                {items.map(i => (
+      <div className="card card-pad space-y-4">
+        {itemsLoading ? (
+          <div className="flex justify-center py-8">
+            <Spinner size="md" label="Loading items…" />
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState
+            title="No items yet"
+            description="Add medicines to your inventory before dispensing."
+            action={
+              <a
+                href="/dashboard/items"
+                className="inline-flex items-center gap-2 rounded-lg bg-clinic-600 px-4 py-2 text-sm font-medium text-white hover:bg-clinic-700"
+              >
+                <PackageOpen className="h-4 w-4" /> Go to items
+              </a>
+            }
+          />
+        ) : (
+          <>
+            <FieldShell id="medicine" label="Medicine" required>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400"
+                  aria-hidden
+                />
+                <TextInput
+                  type="search"
+                  value={query}
+                  onChange={e => {
+                    setQuery(e.target.value)
+                    if (itemId) setItemId('')
+                  }}
+                  placeholder="Search medicines…"
+                  className="pl-8"
+                  aria-label="Filter medicines"
+                />
+              </div>
+              <SelectInput
+                id="medicine"
+                value={itemId}
+                onChange={e => setItemId(e.target.value)}
+                className="mt-2"
+                aria-label="Select medicine"
+              >
+                <option value="">Select medicine…</option>
+                {filteredItems.map(i => (
                   <option key={i.id} value={i.id}>
-                    {i.name} ({i.remaining_inventory} avail)
+                    {i.name} — {i.remaining_inventory} available
                   </option>
                 ))}
-              </select>
+              </SelectInput>
+            </FieldShell>
+
+            {selected && (
+              <div className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-xs">
+                <span className="text-ink-600">
+                  Remaining: <strong className="text-ink-900">{selected.remaining_inventory}</strong>
+                </span>
+                <StatusPill
+                  variant={getStockStatus(selected.remaining_inventory, selected.reorder_level)}
+                  label={getStockStatus(selected.remaining_inventory, selected.reorder_level)}
+                />
+              </div>
             )}
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Quantity *</label>
-              <input type="number" min={1} value={qty} onChange={e => setQty(Number(e.target.value))} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
+            <div className="grid grid-cols-2 gap-3">
+              <FieldShell id="qty" label="Quantity" required>
+                <TextInput
+                  id="qty"
+                  type="number"
+                  min={1}
+                  max={selected?.remaining_inventory ?? undefined}
+                  value={qty}
+                  onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </FieldShell>
+              <FieldShell id="day" label="Day of month">
+                <SelectInput
+                  id="day"
+                  value={day}
+                  onChange={e => setDay(Number(e.target.value))}
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>
+                      Day {d}
+                    </option>
+                  ))}
+                </SelectInput>
+              </FieldShell>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Day (1-31)</label>
-              <select value={day} onChange={e => setDay(Number(e.target.value))} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none">
-                {days.map(d => <option key={d} value={d}>Day {d}</option>)}
-              </select>
-            </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Patient / Reference</label>
-            <input type="text" value={patientRef} onChange={e => setPatientRef(e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" placeholder="Patient name or ID" />
-          </div>
+            <FieldShell
+              id="patient"
+              label="Patient or reference"
+              hint="Optional. Use any short identifier the clinic uses internally."
+            >
+              <TextInput
+                id="patient"
+                value={patientRef}
+                onChange={e => setPatientRef(e.target.value)}
+                placeholder="Patient name or ID"
+              />
+            </FieldShell>
 
-          {itemId && items.find(i => i.id === Number(itemId)) && (
-            <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
-              Available: <strong>{items.find(i => i.id === Number(itemId))?.remaining_inventory}</strong>
-              {qty > (items.find(i => i.id === Number(itemId))?.remaining_inventory || 0) && (
-                <span className="ml-2 text-red-600 font-medium">⚠ Exceeds stock!</span>
-              )}
-            </div>
-          )}
+            {overStock && (
+              <p role="alert" className="text-sm font-medium text-rose-600">
+                Quantity exceeds remaining stock ({selected?.remaining_inventory}).
+              </p>
+            )}
 
-          <button
-            onClick={handleDispense}
-            disabled={saving || !itemId || qty < 1}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow transition hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {saving ? 'Processing...' : 'Dispense & Print Receipt'}
-          </button>
-        </div>
-      ) : (
-        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
-          <div className="text-center">
-            <div className="text-3xl">✅</div>
-            <h2 className="mt-2 text-lg font-bold text-gray-800">Dispensed Successfully</h2>
-          </div>
-
-          <div className="rounded-lg border border-dashed border-gray-300 p-4" style={{ fontFamily: "'Courier New', monospace" }}>
-            <h3 className="text-center text-base font-bold">🧾 SAMPLE RECEIPT</h3>
-            <p className="text-center text-xs text-gray-400">Receipt #{result.id} | {new Date(result.date).toLocaleString()}</p>
-            <hr className="my-2 border-dashed" />
-            <table className="w-full text-sm">
-              <tr><td><strong>Medicine:</strong></td><td className="text-right">{result.medicine}</td></tr>
-              <tr><td><strong>Qty:</strong></td><td className="text-right">{result.quantityDispensed}</td></tr>
-              <tr><td><strong>Patient:</strong></td><td className="text-right">{result.patientRef}</td></tr>
-              <tr><td><strong>Remaining:</strong></td><td className="text-right">{result.remainingInventory}</td></tr>
-            </table>
-            <hr className="my-2 border-dashed" />
-            <p className="text-center text-xs text-gray-400">Thank you</p>
-          </div>
-
-          <div className="flex gap-2">
-            <button onClick={printReceipt} className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700">🖨️ Print</button>
-            <button onClick={() => { setResult(null); setQty(1); setPatientRef('') }} className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">New Dispense</button>
-          </div>
-        </div>
-      )}
+            <PrimaryButton
+              type="button"
+              onClick={handleDispense}
+              disabled={disabled}
+              className="w-full"
+            >
+              <PackageOpen className="h-4 w-4" />
+              {saving ? 'Processing…' : 'Dispense'}
+            </PrimaryButton>
+          </>
+        )}
+      </div>
     </div>
   )
 }

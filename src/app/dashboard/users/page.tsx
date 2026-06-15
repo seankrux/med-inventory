@@ -1,89 +1,149 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
+import { ShieldCheck, ShieldOff } from 'lucide-react'
+import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
+import { useProfile } from '@/lib/useProfile'
 import type { Profile } from '@/lib/types'
-import { useRouter } from 'next/navigation'
+import { PageHeader, StatusPill, Spinner, EmptyState } from '@/components/ui'
+import { format } from 'date-fns'
 
 export default function UsersPage() {
+  const supabase = createClient()
+  const { profile, loading: profileLoading } = useProfile({
+    requireAdmin: true,
+    redirectTo: '/dashboard',
+  })
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [currentUser, setCurrentUser] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabaseRef = useState(() => createClient())[0]
-  const supabase = supabaseRef
-  const router = useRouter()
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return router.push('/auth/login')
-      supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => {
-        if (!data || data.role !== 'admin') router.push('/dashboard')
-        setCurrentUser(data)
+    if (profileLoading) return
+    if (!profile) return
+    supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) toast.error('Failed to load users', { description: error.message })
+        if (data) setProfiles(data as Profile[])
+        setLoading(false)
       })
-    })
-    supabase.from('profiles').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-      if (data) setProfiles(data)
-      setLoading(false)
-    })
-  }, [])
+  }, [supabase, profile, profileLoading])
 
-  async function toggleRole(profile: Profile) {
-    const newRole = profile.role === 'admin' ? 'staff' : 'admin'
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profile.id)
-    if (error) alert('Error: ' + error.message)
-    else setProfiles(profiles.map(p => p.id === profile.id ? { ...p, role: newRole as 'admin' | 'staff' } : p))
+  async function toggleRole(target: Profile) {
+    if (!profile) return
+    if (target.id === profile.id) {
+      toast.error("You can't change your own role")
+      return
+    }
+    const next = target.role === 'admin' ? 'staff' : 'admin'
+    setBusyId(target.id)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: next })
+      .eq('id', target.id)
+    setBusyId(null)
+    if (error) {
+      toast.error('Update failed', { description: error.message })
+      return
+    }
+    setProfiles(prev => prev.map(p => (p.id === target.id ? { ...p, role: next } : p)))
+    toast.success(`${target.display_name} is now ${next}`)
   }
 
-  if (loading) return (
-    <div className="flex justify-center py-20"><div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" /></div>
-  )
+  if (profileLoading || (loading && !profile)) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Spinner size="lg" label="Checking access…" />
+      </div>
+    )
+  }
+
+  if (!profile || profile.role !== 'admin') {
+    // Belt-and-suspenders: hook already redirects, but if not, render empty
+    return null
+  }
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-        <p className="text-sm text-gray-500">{profiles.length} registered users</p>
-      </div>
+      <PageHeader
+        title="User management"
+        description={`${profiles.length} registered user${profiles.length === 1 ? '' : 's'}`}
+      />
 
-      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Joined</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {profiles.map(p => (
-              <tr key={p.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-800">{p.display_name}</td>
-                <td className="px-4 py-3 text-gray-500">{p.email}</td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    p.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {p.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-gray-400 text-xs">{new Date(p.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3">
-                  {currentUser?.id !== p.id && (
-                    <button onClick={() => toggleRole(p)} className="rounded px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 transition">
-                      Toggle to {p.role === 'admin' ? 'Staff' : 'Admin'}
-                    </button>
-                  )}
-                  {currentUser?.id === p.id && (
-                    <span className="text-xs text-gray-400">(you)</span>
-                  )}
-                </td>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Spinner size="md" label="Loading users…" />
+        </div>
+      ) : profiles.length === 0 ? (
+        <EmptyState title="No users yet" description="Profiles appear here after first sign-up." />
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Joined</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {profiles.map(p => {
+                const isSelf = p.id === profile.id
+                return (
+                  <tr key={p.id} className="transition hover:bg-ink-50/60">
+                    <td className="px-4 py-3 font-medium text-ink-900">
+                      {p.display_name}
+                      {isSelf && (
+                        <span className="ml-1.5 text-xs font-normal text-ink-400">
+                          (you)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-ink-600">{p.email}</td>
+                    <td className="px-4 py-3">
+                      <StatusPill
+                        variant={p.role === 'admin' ? 'admin' : 'staff'}
+                        label={p.role}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-xs text-ink-500">
+                      {format(new Date(p.created_at), 'MMM d, yyyy')}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {isSelf ? (
+                        <span className="text-xs text-ink-400">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busyId === p.id}
+                          onClick={() => toggleRole(p)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50"
+                        >
+                          {p.role === 'admin' ? (
+                            <>
+                              <ShieldOff className="h-3 w-3" /> Demote to staff
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="h-3 w-3" /> Promote to admin
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

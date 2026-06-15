@@ -1,108 +1,218 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
+import { PackagePlus, Check } from 'lucide-react'
+import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
+import { useProfile } from '@/lib/useProfile'
+import {
+  PageHeader,
+  FieldShell,
+  SelectInput,
+  TextInput,
+  PrimaryButton,
+  Spinner,
+  EmptyState,
+  Card,
+} from '@/components/ui'
 
 interface Item {
-  id: number; name: string
+  id: number
+  name: string
+  stock_received: number
+}
+
+interface RpcSuccess {
+  success: true
+  receipt: {
+    id: number
+    item_id: number
+    item_name: string
+    quantity: number
+    source: string
+    new_stock_received: number
+    new_remaining: number
+    date: string
+  }
+}
+interface RpcFailure {
+  success: false
+  error: string
 }
 
 export default function ReceivePage() {
+  const supabase = createClient()
+  const { profile, loading: profileLoading } = useProfile()
+
   const [items, setItems] = useState<Item[]>([])
+  const [itemsLoading, setItemsLoading] = useState(true)
   const [itemId, setItemId] = useState('')
   const [qty, setQty] = useState(1)
   const [source, setSource] = useState('')
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(false)
-  const [profile, setProfile] = useState<any>(null)
-  const supabaseRef = useState(() => createClient())[0]
-  const supabase = supabaseRef
+  const [done, setDone] = useState<{ name: string; qty: number; newRemaining: number } | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => setProfile(data))
-    })
-    supabase.from('items').select('id, name').order('name').then(({ data }) => {
-      if (data) setItems(data)
-      setLoading(false)
-    })
-  }, [])
+    supabase
+      .from('items')
+      .select('id, name, stock_received')
+      .order('name')
+      .then(({ data, error }) => {
+        if (error) toast.error('Failed to load items', { description: error.message })
+        if (data) setItems(data as Item[])
+        setItemsLoading(false)
+      })
+  }, [supabase])
+
+  const selected = items.find(i => String(i.id) === itemId)
+  const disabled = saving || itemsLoading || profileLoading || !itemId || qty < 1
 
   async function handleReceive() {
-    if (!itemId || !qty || qty <= 0) return
+    if (!selected || !profile) return
     setSaving(true)
 
-    // Create stock receipt
-    const { error: recErr } = await supabase.from('stock_receipts').insert({
-      item_id: Number(itemId),
-      quantity: qty,
-      source: source.trim() || 'Unknown',
-      received_by: profile?.id,
+    const { data, error } = await supabase.rpc('receive_stock', {
+      p_item_id: selected.id,
+      p_quantity: qty,
+      p_source: source.trim() || 'Unknown',
+      p_received_by: profile.id,
     })
-    if (recErr) { alert('Error: ' + recErr.message); setSaving(false); return }
 
-    // Update item stock_received
-    const { data: curr } = await supabase.from('items').select('stock_received, total_dispensed').eq('id', Number(itemId)).single()
-    if (curr) {
-      const { error: updErr } = await supabase.from('items').update({
-        stock_received: (curr as any).stock_received + qty,
-      }).eq('id', Number(itemId))
-      if (updErr) console.error('Update error:', updErr)
+    if (error) {
+      toast.error('Could not record receipt', { description: error.message })
+      setSaving(false)
+      return
     }
 
+    const result = data as RpcSuccess | RpcFailure | null
+    if (!result || result.success !== true) {
+      toast.error('Could not record receipt', {
+        description: result?.error ?? 'Unexpected result from the receive_stock function.',
+      })
+      setSaving(false)
+      return
+    }
+
+    setItems(prev =>
+      prev.map(i =>
+        i.id === selected.id
+          ? { ...i, stock_received: result.receipt.new_stock_received }
+          : i,
+      ),
+    )
+    setDone({
+      name: selected.name,
+      qty,
+      newRemaining: result.receipt.new_remaining,
+    })
     setSaving(false)
-    setDone(true)
+    toast.success(`Received ×${qty} of ${selected.name}`)
   }
 
-  if (done) return (
-    <div className="mx-auto max-w-lg space-y-5">
-      <div className="rounded-xl border bg-white p-8 text-center shadow-sm">
-        <div className="text-4xl">📦</div>
-        <h2 className="mt-3 text-xl font-bold text-gray-800">Stock Received!</h2>
-        <p className="mt-1 text-sm text-gray-500">Successfully logged to inventory.</p>
-        <button onClick={() => { setDone(false); setItemId(''); setQty(1); setSource('') }}
-          className="mt-4 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-          Receive More
-        </button>
+  function reset() {
+    setDone(null)
+    setItemId('')
+    setQty(1)
+    setSource('')
+  }
+
+  if (done) {
+    return (
+      <div className="mx-auto max-w-md space-y-6">
+        <PageHeader
+          title="Stock received"
+          description="The receipt was recorded and stock has been updated."
+        />
+        <Card>
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-clinic-50 text-clinic-700">
+              <Check className="h-5 w-5" strokeWidth={2.5} />
+            </span>
+            <h2 className="text-lg font-semibold text-ink-900">Receipt logged</h2>
+            <p className="text-sm text-ink-500">
+              Added <strong className="text-ink-900">×{done.qty}</strong> of{' '}
+              <strong className="text-ink-900">{done.name}</strong> to inventory.
+            </p>
+            <p className="text-xs text-ink-500">
+              New on-hand quantity: <strong className="text-ink-900">{done.newRemaining}</strong>
+            </p>
+            <PrimaryButton onClick={reset} className="mt-3">
+              <PackagePlus className="h-4 w-4" /> Receive more
+            </PrimaryButton>
+          </div>
+        </Card>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Receive Stock</h1>
-        <p className="text-sm text-gray-500">Log incoming stock from suppliers</p>
-      </div>
+    <div className="mx-auto max-w-lg space-y-6">
+      <PageHeader
+        title="Receive stock"
+        description="Log an incoming delivery or transfer. Stock is incremented atomically."
+      />
 
-      <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Medicine *</label>
-          {loading ? (
-            <div className="mt-1 h-10 animate-pulse rounded-lg bg-gray-100" />
-          ) : (
-            <select value={itemId} onChange={e => setItemId(e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none">
-              <option value="">Select medicine...</option>
-              {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-            </select>
-          )}
-        </div>
+      <div className="card card-pad space-y-4">
+        {itemsLoading ? (
+          <div className="flex justify-center py-8">
+            <Spinner size="md" label="Loading items…" />
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState
+            title="No items yet"
+            description="Add medicines to your inventory before receiving stock."
+          />
+        ) : (
+          <>
+            <FieldShell id="item" label="Medicine" required>
+              <SelectInput
+                id="item"
+                value={itemId}
+                onChange={e => setItemId(e.target.value)}
+              >
+                <option value="">Select medicine…</option>
+                {items.map(i => (
+                  <option key={i.id} value={i.id}>
+                    {i.name} — {i.stock_received} received so far
+                  </option>
+                ))}
+              </SelectInput>
+            </FieldShell>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Quantity *</label>
-          <input type="number" min={1} value={qty} onChange={e => setQty(Number(e.target.value))} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" />
-        </div>
+            <FieldShell id="qty" label="Quantity" required>
+              <TextInput
+                id="qty"
+                type="number"
+                min={1}
+                value={qty}
+                onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </FieldShell>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Source / Supplier</label>
-          <input type="text" value={source} onChange={e => setSource(e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none" placeholder="e.g., Supplier name, donation, transfer" />
-        </div>
+            <FieldShell
+              id="source"
+              label="Source / supplier"
+              hint="Optional. e.g. supplier name, donation, transfer."
+            >
+              <TextInput
+                id="source"
+                value={source}
+                onChange={e => setSource(e.target.value)}
+                placeholder="e.g. Supplier, donation, transfer"
+              />
+            </FieldShell>
 
-        <button onClick={handleReceive} disabled={saving || !itemId || qty < 1}
-          className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow transition hover:bg-emerald-700 disabled:opacity-50">
-          {saving ? 'Processing...' : '📦 Receive Stock'}
-        </button>
+            <PrimaryButton
+              type="button"
+              onClick={handleReceive}
+              disabled={disabled}
+              className="w-full"
+            >
+              <PackagePlus className="h-4 w-4" />
+              {saving ? 'Processing…' : 'Receive stock'}
+            </PrimaryButton>
+          </>
+        )}
       </div>
     </div>
   )

@@ -1,176 +1,281 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
+import { Plus, Pencil, Trash2, Pill, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
-import { getStockStatus, cn } from '@/lib/utils'
-import type { Item, Category, Profile } from '@/lib/types'
+import { useProfile } from '@/lib/useProfile'
+import { getStockStatus } from '@/lib/utils'
+import type { Category, Item } from '@/lib/types'
+import {
+  PageHeader,
+  StatusPill,
+  FieldShell,
+  TextInput,
+  SelectInput,
+  PrimaryButton,
+  SecondaryButton,
+  Modal,
+  Spinner,
+  EmptyState,
+} from '@/components/ui'
+
+interface FormState {
+  name: string
+  category_id: string
+  beginning_inventory: string
+  reorder_level: string
+  remarks: string
+  no: string
+}
+
+const EMPTY_FORM: FormState = {
+  name: '',
+  category_id: '',
+  beginning_inventory: '0',
+  reorder_level: '0',
+  remarks: '',
+  no: '',
+}
 
 export default function ItemsPage() {
+  const supabase = createClient()
+  const { isAdmin, loading: profileLoading } = useProfile()
   const [items, setItems] = useState<Item[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', category_id: '', beginning_inventory: '0', reorder_level: '0', remarks: '', no: '' })
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const supabaseRef = useState(() => createClient())[0]
-  const supabase = supabaseRef
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function loadData() {
+    setLoading(true)
     const [itemsRes, catsRes] = await Promise.all([
       supabase.from('items').select('*, categories(name)').order('name'),
       supabase.from('categories').select('*').order('name'),
     ])
-    if (itemsRes.data) setItems(itemsRes.data.map((i: any) => ({ ...i, category_name: i.categories?.name })))
+    if (itemsRes.error) toast.error('Failed to load items', { description: itemsRes.error.message })
+    if (catsRes.error) toast.error('Failed to load categories', { description: catsRes.error.message })
+    if (itemsRes.data) {
+      setItems(
+        itemsRes.data.map((i: Item & { categories?: { name: string } | null }) => ({
+          ...i,
+          category_name: i.categories?.name,
+        })),
+      )
+    }
     if (catsRes.data) setCategories(catsRes.data)
     setLoading(false)
   }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => setProfile(data))
-    })
-    loadData()
+    // One-shot mount fetch — loadData() owns its own setState.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isAdmin = profile?.role === 'admin'
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return items.filter(i => {
+      if (q && !i.name.toLowerCase().includes(q)) return false
+      if (catFilter && i.category_id !== Number(catFilter)) return false
+      return true
+    })
+  }, [items, search, catFilter])
 
-  const filtered = items.filter(i => {
-    if (search && !i.name.toLowerCase().includes(search.toLowerCase())) return false
-    if (catFilter && i.category_id !== Number(catFilter)) return false
-    return true
-  })
+  function openNew() {
+    setForm({ ...EMPTY_FORM, no: String(items.length + 1) })
+    setEditingId(null)
+    setShowForm(true)
+  }
 
   function openEdit(item: Item) {
     setForm({
       name: item.name,
-      category_id: String(item.category_id || ''),
+      category_id: String(item.category_id ?? ''),
       beginning_inventory: String(item.beginning_inventory),
       reorder_level: String(item.reorder_level),
       remarks: item.remarks,
-      no: String(item.no),
+      no: String(item.no ?? ''),
     })
     setEditingId(item.id)
     setShowForm(true)
   }
 
-  function openNew() {
-    setForm({ name: '', category_id: '', beginning_inventory: '0', reorder_level: '0', remarks: '', no: String(items.length + 1) })
-    setEditingId(null)
-    setShowForm(true)
-  }
-
-  async function saveItem() {
-    if (!form.name.trim()) return
+  async function save() {
+    if (!form.name.trim()) {
+      toast.error('Medicine name is required')
+      return
+    }
+    setSaving(true)
     const payload = {
       name: form.name.trim(),
       category_id: form.category_id ? Number(form.category_id) : null,
       beginning_inventory: Number(form.beginning_inventory) || 0,
-      stock_received: 0,
-      total_dispensed: 0,
       reorder_level: Number(form.reorder_level) || 0,
       remarks: form.remarks.trim(),
       no: Number(form.no) || 0,
     }
-
-    if (editingId) {
-      // Don't overwrite stock_received/total_dispensed on edit
-      await supabase.from('items').update(payload).eq('id', editingId)
-    } else {
-      await supabase.from('items').insert(payload)
+    const { error } = editingId
+      ? await supabase.from('items').update(payload).eq('id', editingId)
+      : await supabase.from('items').insert(payload)
+    setSaving(false)
+    if (error) {
+      toast.error('Save failed', { description: error.message })
+      return
     }
+    toast.success(editingId ? 'Item updated' : 'Item added')
     setShowForm(false)
+    setForm(EMPTY_FORM)
+    setEditingId(null)
     loadData()
   }
 
-  async function deleteItem(id: number) {
-    if (!confirm('Delete this item permanently?')) return
-    await supabase.from('items').delete().eq('id', id)
+  async function remove(id: number) {
+    if (!confirm('Delete this item permanently? Past dispenses and receipts will be cascaded.')) return
+    const { error } = await supabase.from('items').delete().eq('id', id)
+    if (error) {
+      toast.error('Delete failed', { description: error.message })
+      return
+    }
+    toast.success('Item deleted')
     loadData()
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inventory Items</h1>
-          <p className="text-sm text-gray-500">{items.length} medicines registered</p>
-        </div>
-        {isAdmin && (
-          <button onClick={openNew} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow transition hover:bg-emerald-700">
-            + Add Item
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Inventory items"
+        description={`${items.length} medicine${items.length === 1 ? '' : 's'} registered`}
+        actions={
+          isAdmin ? (
+            <PrimaryButton onClick={openNew}>
+              <Plus className="h-4 w-4" /> Add item
+            </PrimaryButton>
+          ) : undefined
+        }
+      />
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <input
-          type="text"
-          placeholder="Search medicines..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-        />
-        <select
+        <div className="relative min-w-[220px] flex-1">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400"
+            aria-hidden
+          />
+          <TextInput
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search medicines…"
+            className="pl-8"
+            aria-label="Search medicines"
+          />
+        </div>
+        <SelectInput
           value={catFilter}
           onChange={e => setCatFilter(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+          aria-label="Filter by category"
+          className="min-w-[180px]"
         >
-          <option value="">All Categories</option>
+          <option value="">All categories</option>
           {categories.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
           ))}
-        </select>
+        </SelectInput>
       </div>
 
-      {/* Item list */}
-      {loading ? (
-        <div className="flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" /></div>
+      {profileLoading || (loading && items.length === 0) ? (
+        <div className="flex justify-center py-12">
+          <Spinner size="md" label="Loading items…" />
+        </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl border bg-white py-12 text-center text-gray-400">No items found</div>
+        <EmptyState
+          title={items.length === 0 ? 'No items yet' : 'No matches'}
+          description={
+            items.length === 0
+              ? 'Add your first medicine to start tracking inventory.'
+              : 'Try a different search term or clear the filters.'
+          }
+          action={
+            items.length === 0 && isAdmin ? (
+              <PrimaryButton onClick={openNew}>
+                <Plus className="h-4 w-4" /> Add first item
+              </PrimaryButton>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+            <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
               <tr>
                 <th className="px-4 py-3">No.</th>
                 <th className="px-4 py-3">Medicine</th>
                 <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3 text-right">Beginning</th>
-                <th className="px-4 py-3 text-right">Received</th>
-                <th className="px-4 py-3 text-right">Dispensed</th>
-                <th className="px-4 py-3 text-right">Remaining</th>
+                <th className="px-4 py-3 text-right">Begin</th>
+                <th className="px-4 py-3 text-right">Recv</th>
+                <th className="px-4 py-3 text-right">Disp</th>
+                <th className="px-4 py-3 text-right">Left</th>
                 <th className="px-4 py-3 text-right">Reorder</th>
-                <th className="px-4 py-3 text-center">Status</th>
+                <th className="px-4 py-3">Status</th>
                 {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-ink-100">
               {filtered.map(item => {
                 const status = getStockStatus(item.remaining_inventory, item.reorder_level)
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-400">{item.no || '—'}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{item.category_name || '—'}</td>
-                    <td className="px-4 py-3 text-right">{item.beginning_inventory}</td>
-                    <td className="px-4 py-3 text-right">{item.stock_received}</td>
-                    <td className="px-4 py-3 text-right">{item.total_dispensed}</td>
-                    <td className="px-4 py-3 text-right font-medium">{item.remaining_inventory}</td>
-                    <td className="px-4 py-3 text-right">{item.reorder_level || '—'}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={cn(
-                        'inline-block h-2 w-2 rounded-full',
-                        status === 'critical' ? 'bg-red-500' : status === 'low' ? 'bg-amber-400' : 'bg-emerald-400'
-                      )} />
+                  <tr key={item.id} className="transition hover:bg-ink-50/60">
+                    <td className="px-4 py-3 text-ink-400">{item.no || '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Pill className="h-3.5 w-3.5 text-ink-400" aria-hidden />
+                        <span className="font-medium text-ink-900">{item.name}</span>
+                      </div>
+                      {item.remarks && (
+                        <p className="mt-0.5 text-xs text-ink-500">{item.remarks}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-ink-600">{item.category_name || '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {item.beginning_inventory}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{item.stock_received}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{item.total_dispensed}</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-ink-900">
+                      {item.remaining_inventory}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-ink-500">
+                      {item.reorder_level || '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill variant={status} label={status} />
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => openEdit(item)} className="mr-2 rounded px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100">Edit</button>
-                        <button onClick={() => deleteItem(item.id)} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
+                        <div className="inline-flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(item)}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100"
+                            aria-label={`Edit ${item.name}`}
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => remove(item.id)}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                            aria-label={`Delete ${item.name}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -181,51 +286,89 @@ export default function ItemsPage() {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-800 mb-4">{editingId ? 'Edit Item' : 'Add Item'}</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600">Medicine Name *</label>
-                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" placeholder="Paracetamol 500mg" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600">Category</label>
-                  <select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none">
-                    <option value="">Select</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600">Item No.</label>
-                  <input value={form.no} onChange={e => setForm({ ...form, no: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600">Beginning Inventory</label>
-                  <input type="number" value={form.beginning_inventory} onChange={e => setForm({ ...form, beginning_inventory: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600">Reorder Level</label>
-                  <input type="number" value={form.reorder_level} onChange={e => setForm({ ...form, reorder_level: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600">Remarks</label>
-                <input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setShowForm(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={saveItem} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
-            </div>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? 'Edit item' : 'Add item'}
+        footer={
+          <>
+            <SecondaryButton onClick={() => setShowForm(false)}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add item'}
+            </PrimaryButton>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FieldShell id="name" label="Medicine name" required>
+            <TextInput
+              id="name"
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Paracetamol 500 mg"
+            />
+          </FieldShell>
+          <div className="grid grid-cols-2 gap-3">
+            <FieldShell id="cat" label="Category">
+              <SelectInput
+                id="cat"
+                value={form.category_id}
+                onChange={e => setForm({ ...form, category_id: e.target.value })}
+              >
+                <option value="">Select…</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </SelectInput>
+            </FieldShell>
+            <FieldShell id="no" label="Item number">
+              <TextInput
+                id="no"
+                type="number"
+                value={form.no}
+                onChange={e => setForm({ ...form, no: e.target.value })}
+              />
+            </FieldShell>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FieldShell
+              id="begin"
+              label="Beginning inventory"
+              hint="On-hand at start. Locked once dispensed."
+            >
+              <TextInput
+                id="begin"
+                type="number"
+                min={0}
+                value={form.beginning_inventory}
+                onChange={e =>
+                  setForm({ ...form, beginning_inventory: e.target.value })
+                }
+                disabled={!!editingId}
+              />
+            </FieldShell>
+            <FieldShell id="reorder" label="Reorder level">
+              <TextInput
+                id="reorder"
+                type="number"
+                min={0}
+                value={form.reorder_level}
+                onChange={e => setForm({ ...form, reorder_level: e.target.value })}
+              />
+            </FieldShell>
+          </div>
+          <FieldShell id="remarks" label="Remarks">
+            <TextInput
+              id="remarks"
+              value={form.remarks}
+              onChange={e => setForm({ ...form, remarks: e.target.value })}
+              placeholder="Optional"
+            />
+          </FieldShell>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
