@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
 import { Mail, Lock, AlertCircle, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { LogoMark } from '@/components/Logo'
+import { HeroPanel } from '@/components/auth/HeroPanel'
 import {
   FieldShell,
   TextInput,
@@ -26,6 +29,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const formScope = useRef<HTMLDivElement>(null)
+
+  useGSAP(
+    () => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      gsap.from('.auth-anim', {
+        y: 14,
+        opacity: 0,
+        duration: 0.6,
+        stagger: 0.08,
+        ease: 'power2.out',
+        immediateRender: false,
+        clearProps: 'opacity,transform',
+      })
+    },
+    { scope: formScope },
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -62,23 +82,36 @@ export default function LoginPage() {
   return (
     <>
       <Toaster />
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 p-4">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 text-center">
+      <div className="grid min-h-[100dvh] lg:grid-cols-2">
+        <HeroPanel />
+        <div
+          ref={formScope}
+          className="flex items-center justify-center bg-ink-50 p-6 sm:p-8"
+        >
+          <div className="w-full max-w-sm">
+          <div className="auth-anim mb-8 text-center lg:hidden">
             <div className="mx-auto mb-4 flex justify-center">
               <LogoMark size={56} className="drop-shadow-lg" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
               DG&nbsp;Labs <span className="text-clinic-700">Inventory</span>
             </h1>
+          </div>
+          <div className="auth-anim mb-8 hidden lg:block">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+              {mode === 'login' ? 'Welcome back' : 'Create your account'}
+            </h1>
             <p className="mt-1 text-sm text-ink-500">
-              {mode === 'login' ? 'Sign in to your lab' : 'Create a lab account'}
+              {mode === 'login' ? 'Sign in to your lab' : 'Set up access to your lab'}
             </p>
           </div>
+          <p className="auth-anim mb-6 text-center text-sm text-ink-500 lg:hidden">
+            {mode === 'login' ? 'Sign in to your lab' : 'Create a lab account'}
+          </p>
 
           <form
             onSubmit={handleSubmit}
-            className="card card-pad space-y-4"
+            className="auth-anim card card-pad space-y-4"
             aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
           >
             <FieldShell id="email" label="Email" required>
@@ -143,7 +176,7 @@ export default function LoginPage() {
             </PrimaryButton>
           </form>
 
-          <p className="mt-4 text-center text-sm text-ink-500">
+          <p className="auth-anim mt-4 text-center text-sm text-ink-500">
             {mode === 'login' ? (
               <>
                 New to the clinic?{' '}
@@ -176,6 +209,7 @@ export default function LoginPage() {
               </>
             )}
           </p>
+          </div>
         </div>
       </div>
     </>

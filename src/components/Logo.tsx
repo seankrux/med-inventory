@@ -1,3 +1,6 @@
+'use client'
+
+import { useId } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -17,6 +20,10 @@ export function LogoMark({
   size?: number
   animate?: boolean
 }) {
+  // Unique gradient id per instance — multiple LogoMarks on one page (e.g. the
+  // split-screen login) would otherwise collide on a shared id and break the
+  // fill reference, especially when one instance is `display:none`.
+  const tileId = `dg-tile-${useId()}`
   return (
     <svg
       width={size}
@@ -29,13 +36,13 @@ export function LogoMark({
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <linearGradient id="dg-tile" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+        <linearGradient id={tileId} x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
           <stop stopColor="var(--color-clinic-500)" />
           <stop offset="1" stopColor="var(--color-clinic-700)" />
         </linearGradient>
       </defs>
 
-      <rect width="40" height="40" rx="11" fill="url(#dg-tile)" />
+      <rect width="40" height="40" rx="11" fill={`url(#${tileId})`} />
 
       {/* bonds */}
       <g stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity="0.92">
