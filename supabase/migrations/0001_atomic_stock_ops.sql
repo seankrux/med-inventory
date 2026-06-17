@@ -74,11 +74,11 @@ LANGUAGE sql SECURITY INVOKER STABLE AS $$
                               WHERE reorder_level > 0
                                 AND remaining_inventory > 0
                                 AND remaining_inventory <= reorder_level
-                                AND remaining_inventory >  reorder_level / 2),
+                                AND remaining_inventory >  reorder_level / 2.0),
     'critical_stock',      (SELECT COUNT(*) FROM items
                               WHERE remaining_inventory <= 0
                                  OR (reorder_level > 0
-                                     AND remaining_inventory <= reorder_level / 2)),
+                                     AND remaining_inventory <= reorder_level / 2.0)),
     'total_dispensed_month',(SELECT COALESCE(SUM(quantity), 0)
                                FROM dispenses
                                WHERE year = p_year

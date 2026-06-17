@@ -1,5 +1,5 @@
-# Med Inventory — Supabase Schema
-# Run this in Supabase SQL Editor
+-- Med Inventory — Supabase Schema
+-- Run this in Supabase SQL Editor
 
 -- 1. CUSTOM TYPES
 CREATE TYPE user_role AS ENUM ('admin', 'staff');

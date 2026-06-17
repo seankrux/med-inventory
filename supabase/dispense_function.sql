@@ -44,3 +44,5 @@ BEGIN
   );
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION dispense_item(BIGINT, INTEGER, INTEGER, TEXT, UUID) TO authenticated;
