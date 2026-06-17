@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import {
@@ -44,6 +44,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const supabase = createClient()
+
+  // If the session is missing or expired (proxy normally catches this first,
+  // but client-side expiry can happen mid-session), bounce to the login page
+  // instead of stranding the user on a dead "Not signed in" shell.
+  useEffect(() => {
+    if (!loading && !profile) {
+      router.replace('/auth/login')
+    }
+  }, [loading, profile, router])
 
   const visibleNav = NAV.filter(n => !n.adminOnly || isAdmin)
 

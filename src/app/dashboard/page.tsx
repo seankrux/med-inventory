@@ -81,12 +81,26 @@ export default function DashboardPage() {
     }
   }, [supabase])
 
-  if (loading || !stats) {
+  if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <Spinner size="lg" label="Loading dashboard…" />
       </div>
     )
+  }
+
+  // Never block the whole page on a failed stats RPC — fall back to zeros
+  // (derived from the items we did load) so the dashboard always renders.
+  const safeStats: DashboardStats = stats ?? {
+    total_items: items.length,
+    total_categories: 0,
+    low_stock: items.filter(
+      i => getStockStatus(i.remaining_inventory, i.reorder_level) === 'low',
+    ).length,
+    critical_stock: items.filter(
+      i => getStockStatus(i.remaining_inventory, i.reorder_level) === 'critical',
+    ).length,
+    total_dispensed_month: 0,
   }
 
   const critical = items
@@ -106,32 +120,32 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard
           label="Total items"
-          value={stats.total_items}
+          value={safeStats.total_items}
           icon={<Pill className="h-4 w-4" />}
           helper="In registry"
         />
         <StatCard
           label="Categories"
-          value={stats.total_categories}
+          value={safeStats.total_categories}
           tone="violet"
           icon={<FolderTree className="h-4 w-4" />}
         />
         <StatCard
           label="Low stock"
-          value={stats.low_stock}
+          value={safeStats.low_stock}
           tone="amber"
           icon={<History className="h-4 w-4" />}
         />
         <StatCard
           label="Critical"
-          value={stats.critical_stock}
+          value={safeStats.critical_stock}
           tone="rose"
           icon={<Pill className="h-4 w-4" />}
           helper="Reorder now"
         />
         <StatCard
           label="Dispensed this month"
-          value={stats.total_dispensed_month}
+          value={safeStats.total_dispensed_month}
           tone="clinic"
           icon={<PackageOpen className="h-4 w-4" />}
           helper="Across all items"
@@ -142,7 +156,7 @@ export default function DashboardPage() {
         <section className="card card-pad border-rose-200 bg-rose-50/60">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-rose-900">Critical stock</h2>
-            <StatusPill variant="critical" label={`${stats.critical_stock} items`} />
+            <StatusPill variant="critical" label={`${safeStats.critical_stock} items`} />
           </div>
           <ul className="divide-y divide-rose-200/70">
             {critical.map(item => (
