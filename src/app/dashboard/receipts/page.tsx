@@ -239,7 +239,27 @@ function TabButton({
 
 function DispensesTable({ rows }: { rows: DispenseRow[] }) {
   return (
-    <div className="card overflow-x-auto">
+    <>
+    <ul className="space-y-2 sm:hidden">
+      {rows.map(d => (
+        <li key={d.id} className="card card-pad">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium text-ink-900">{d.item_name ?? `Item #${d.id}`}</p>
+              <p className="mt-0.5 text-xs text-ink-500">
+                {format(new Date(d.created_at), 'MMM d, yyyy · HH:mm')}
+              </p>
+            </div>
+            <StatusPill variant="critical" label={`−${d.quantity}`} />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-600">
+            <span>Patient: {d.patient_ref || '—'}</span>
+            <span>Staff: {d.by_name}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <div className="card hidden overflow-x-auto sm:block">
       <table className="w-full text-sm">
         <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
           <tr>
@@ -274,12 +294,33 @@ function DispensesTable({ rows }: { rows: DispenseRow[] }) {
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 
 function ReceiptsTable({ rows }: { rows: ReceiptRow[] }) {
   return (
-    <div className="card overflow-x-auto">
+    <>
+    <ul className="space-y-2 sm:hidden">
+      {rows.map(r => (
+        <li key={r.id} className="card card-pad">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium text-ink-900">{r.item_name ?? `Item #${r.id}`}</p>
+              <p className="mt-0.5 text-xs text-ink-500">
+                {format(new Date(r.created_at), 'MMM d, yyyy · HH:mm')}
+              </p>
+            </div>
+            <StatusPill variant="ok" label={`+${r.quantity}`} />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-600">
+            <span>Source: {r.source}</span>
+            <span>Staff: {r.by_name}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+    <div className="card hidden overflow-x-auto sm:block">
       <table className="w-full text-sm">
         <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
           <tr>
@@ -309,5 +350,6 @@ function ReceiptsTable({ rows }: { rows: ReceiptRow[] }) {
         </tbody>
       </table>
     </div>
+    </>
   )
 }

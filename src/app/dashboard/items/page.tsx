@@ -210,7 +210,64 @@ export default function ItemsPage() {
           }
         />
       ) : (
-        <div className="card overflow-x-auto">
+        <>
+        {/* Mobile: stacked cards (tables scroll awkwardly on phones) */}
+        <ul className="space-y-2 sm:hidden">
+          {filtered.map(item => {
+            const status = getStockStatus(item.remaining_inventory, item.reorder_level)
+            return (
+              <li key={item.id} className="card card-pad">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Pill className="h-3.5 w-3.5 shrink-0 text-ink-400" aria-hidden />
+                      <span className="font-medium text-ink-900">{item.name}</span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {item.category_name || 'No category'}
+                      {item.remarks ? ` · ${item.remarks}` : ''}
+                    </p>
+                  </div>
+                  <StatusPill variant={status} label={status} />
+                </div>
+                <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  {[
+                    ['Begin', item.beginning_inventory],
+                    ['Recv', item.stock_received],
+                    ['Disp', item.total_dispensed],
+                    ['Left', item.remaining_inventory],
+                  ].map(([label, val]) => (
+                    <div key={label as string} className="rounded-md bg-ink-50 py-1.5">
+                      <dt className="text-[10px] uppercase tracking-wide text-ink-400">{label}</dt>
+                      <dd className="text-sm font-semibold tabular-nums text-ink-900">{val}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {isAdmin && (
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(item)}
+                      className="inline-flex items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                    >
+                      <Pencil className="h-3 w-3" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(item.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1 text-xs font-medium text-rose-600 hover:border-rose-200 hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+
+        {/* Desktop / tablet: full table */}
+        <div className="card hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
               <tr>
@@ -284,6 +341,7 @@ export default function ItemsPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <Modal

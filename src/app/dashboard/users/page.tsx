@@ -174,7 +174,58 @@ export default function UsersPage() {
           description="Add your first teammate with the button above."
         />
       ) : (
-        <div className="card overflow-x-auto">
+        <>
+        {/* Mobile: stacked cards */}
+        <ul className="space-y-2 sm:hidden">
+          {profiles.map(p => {
+            const isSelf = p.id === profile.id
+            return (
+              <li key={p.id} className="card card-pad">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink-900">
+                      {p.display_name}
+                      {isSelf && (
+                        <span className="ml-1.5 text-xs font-normal text-ink-400">(you)</span>
+                      )}
+                    </p>
+                    <p className="truncate text-sm text-ink-600">{p.email}</p>
+                    <p className="mt-0.5 text-xs text-ink-400">
+                      Joined {format(new Date(p.created_at), 'MMM d, yyyy')}
+                    </p>
+                  </div>
+                  <StatusPill variant={p.role === 'admin' ? 'admin' : 'staff'} label={p.role} />
+                </div>
+                {!isSelf && (
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === p.id}
+                      onClick={() => toggleRole(p)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50"
+                    >
+                      {p.role === 'admin' ? (
+                        <><ShieldOff className="h-3 w-3" /> Demote</>
+                      ) : (
+                        <><ShieldCheck className="h-3 w-3" /> Promote</>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setToDelete(p)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-2.5 py-1 text-xs font-medium text-rose-600 hover:border-rose-200 hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+
+        {/* Desktop / tablet: table */}
+        <div className="card hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className="border-b border-ink-200 bg-ink-50/60 text-left text-xs font-medium uppercase tracking-wider text-ink-500">
               <tr>
@@ -246,6 +297,7 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Add user modal */}
