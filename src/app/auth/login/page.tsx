@@ -32,7 +32,7 @@ export default function LoginPage() {
     setError(null)
     setInfo(null)
 
-    const { error: authErr } =
+    const { data, error: authErr } =
       mode === 'login'
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password })
@@ -44,7 +44,8 @@ export default function LoginPage() {
       return
     }
 
-    if (mode === 'signup') {
+    if (mode === 'signup' && !data.session) {
+      // Email confirmation is enabled — no session yet, user must confirm.
       const message = 'Check your email to confirm the account, then sign in.'
       setInfo(message)
       toast.success(message)
@@ -53,6 +54,7 @@ export default function LoginPage() {
       return
     }
 
+    // Signed in (login, or signup with auto-confirm) — go to the app.
     router.push('/dashboard')
   }
 
