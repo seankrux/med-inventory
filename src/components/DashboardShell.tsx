@@ -19,6 +19,7 @@ import { useProfile } from '@/lib/useProfile'
 import { cn } from '@/lib/utils'
 import { StatusPill } from './ui/StatusPill'
 import { Toaster } from './ui/Toaster'
+import { LogoMark } from './Logo'
 import { createClient } from '@/lib/supabase/client'
 
 interface NavItem {
@@ -91,16 +92,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         aria-label="Primary navigation"
       >
         <div className="flex h-16 items-center gap-2.5 border-b border-ink-200 px-5">
-          <span
-            aria-hidden
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-clinic-600 text-white shadow-sm"
-          >
-            <Activity className="h-4 w-4" strokeWidth={2.5} />
-          </span>
+          <LogoMark size={32} />
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-ink-900">Med Inventory</span>
+            <span className="text-sm font-semibold text-ink-900">
+              DG&nbsp;Labs <span className="text-clinic-700">Inventory</span>
+            </span>
             <span className="text-[10px] uppercase tracking-wider text-ink-400">
-              Clinic operations
+              Lab operations
             </span>
           </div>
           <button
@@ -189,7 +187,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold text-ink-800">Med Inventory</span>
+          <span className="text-sm font-semibold text-ink-800">DG&nbsp;Labs Inventory</span>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>

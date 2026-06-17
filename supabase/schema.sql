@@ -1,4 +1,4 @@
--- Med Inventory — Supabase Schema
+-- DG Labs Inventory — Supabase Schema
 -- Run this in Supabase SQL Editor
 
 -- 1. CUSTOM TYPES

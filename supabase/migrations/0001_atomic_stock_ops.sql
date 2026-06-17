@@ -1,4 +1,4 @@
--- Med Inventory — atomic stock operations
+-- DG Labs Inventory — atomic stock operations
 -- Run AFTER schema.sql in Supabase SQL Editor
 --
 -- Why this exists:

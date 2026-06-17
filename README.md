@@ -1,4 +1,4 @@
-# Med Inventory Manager
+# DG Labs Inventory Manager
 
 A focused medical inventory app for small clinics. Add medicines, receive deliveries, dispense to patients, and print a receipt — all in one place with role-based access and a complete audit trail.
 

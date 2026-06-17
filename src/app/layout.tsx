@@ -1,13 +1,13 @@
 /**
  * Root layout — no supabase client here, purely structural.
- * Auth is handled by middleware.ts and client-side in pages.
+ * Auth is handled by proxy.ts and client-side in pages.
  */
 import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Med Inventory",
-  description: "Medical inventory management system",
+  title: "DG Labs Inventory",
+  description: "Medical inventory management for DG Labs",
 };
 
 export default function RootLayout({

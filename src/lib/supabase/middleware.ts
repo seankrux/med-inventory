@@ -36,7 +36,12 @@ export async function updateSession(request: NextRequest) {
   const isAuth = request.nextUrl.pathname.startsWith('/auth')
   const isApi = request.nextUrl.pathname.startsWith('/api')
 
-  if (!user && (isDashboard || isApi)) {
+  if (!user && isApi) {
+    // API callers want JSON, not an HTML login redirect.
+    return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+  }
+
+  if (!user && isDashboard) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/login'
     url.searchParams.set('redirect', request.nextUrl.pathname)

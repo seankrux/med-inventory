@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Mail, Lock, AlertCircle, Info } from 'lucide-react'
+import { Mail, Lock, AlertCircle, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { LogoMark } from '@/components/Logo'
 import {
   FieldShell,
   TextInput,
@@ -64,17 +65,14 @@ export default function LoginPage() {
       <div className="flex min-h-screen items-center justify-center bg-ink-50 p-4">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <div
-              aria-hidden
-              className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-clinic-600 text-white shadow-lg"
-            >
-              <Activity className="h-6 w-6" strokeWidth={2.5} />
+            <div className="mx-auto mb-4 flex justify-center">
+              <LogoMark size={56} className="drop-shadow-lg" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
-              Med Inventory
+              DG&nbsp;Labs <span className="text-clinic-700">Inventory</span>
             </h1>
             <p className="mt-1 text-sm text-ink-500">
-              {mode === 'login' ? 'Sign in to your clinic' : 'Create a clinic account'}
+              {mode === 'login' ? 'Sign in to your lab' : 'Create a lab account'}
             </p>
           </div>
 
