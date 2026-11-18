@@ -9,7 +9,10 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy:cloudflare": "wrangler deploy",
+    "preview:cloudflare": "opennextjs-cloudflare build && wrangler dev"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -34,7 +37,10 @@
     "eslint-config-next": "16.4.6",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@opennextjs/cloudflare": "1.20.17",
+    "wrangler": "4.164.0",
+    "rclone.js": "0.6.6"
   },
   "engines": {
     "node": ">=22.12.0"
