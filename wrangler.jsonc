@@ -12,5 +12,11 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "dglabs.seanguillermo.com",
+      "custom_domain": true
+    }
+  ]
 }
