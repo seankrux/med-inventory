@@ -9,7 +9,10 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy:cloudflare": "wrangler deploy",
+    "preview:cloudflare": "opennextjs-cloudflare build && wrangler dev"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -21,7 +24,7 @@
     "lucide-react": "^1.18.0",
     "next": "16.2.9",
     "react": "19.2.7",
-    "react-dom": "19.2.4",
+    "react-dom": "19.2.7",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0"
   },
@@ -30,10 +33,13 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^10",
+    "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "@opennextjs/cloudflare": "1.20.1",
+    "wrangler": "4.164.0",
+    "rclone.js": "0.6.6"
   }
 }

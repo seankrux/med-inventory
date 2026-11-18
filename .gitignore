@@ -43,3 +43,8 @@ next-env.d.ts
 
 # Local preview tooling
 .claude/
+
+.open-next/
+.wrangler/
+.dev.vars*
+.env.production
