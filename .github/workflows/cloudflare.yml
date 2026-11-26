@@ -1,0 +1,57 @@
+name: Cloudflare
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CLOUDFLARE_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build:cloudflare
+      - name: Deploy
+        if: github.event_name != 'pull_request'
+        run: npm run deploy:cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: "7a7a08127b6d6744c838413b4473ecf1"
+      - name: Apply runtime secrets
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: "7a7a08127b6d6744c838413b4473ecf1"
+          CLOUDFLARE_RUNTIME_ENV: ${{ secrets.CLOUDFLARE_RUNTIME_ENV }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          values = json.loads(os.environ["CLOUDFLARE_RUNTIME_ENV"])
+          target = Path(os.environ["RUNNER_TEMP"]) / "cloudflare-runtime.json"
+          target.write_text(json.dumps(values))
+          target.chmod(0o600)
+          PYTHON
+          npx wrangler secret bulk "$RUNNER_TEMP/cloudflare-runtime.json"
